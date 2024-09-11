@@ -6,45 +6,9 @@ env:
 jobs:
   build-release:
     name: Build Release Assets
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-
-          - target: x86_64-unknown-linux-musl
-            os: ubuntu-latest
-            docker-artifact: true
-
-          - target: i686-unknown-linux-musl
-            os: ubuntu-latest
-
-          - target: aarch64-unknown-linux-musl
-            os: ubuntu-latest
-
-          - target: arm-unknown-linux-musleabihf
-            os: ubuntu-latest
-
-          - target: x86_64-apple-darwin
-            os: macOS-latest
-
-          - target: aarch64-apple-darwin
-            os: macOS-latest
-
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-
-          - target: i686-pc-windows-msvc
-            os: windows-latest
-
-          - target: x86_64-pc-windows-gnu
-            os: windows-latest
-
-          - target: i686-pc-windows-gnu
-            os: ubuntu-latest
-            use-cross: true
 
     steps:
       - name: Checkout repository
@@ -54,28 +18,25 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: x86_64-unknown-linux-musl
 
       - name: Build release binary
         uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --release --locked --target ${{ matrix.target }}
-          use-cross: ${{ matrix.use-cross || matrix.os == 'ubuntu-latest' }}
+          args: --release --locked --target x86_64-unknown-linux-musl
+          use-cross: true
 
       - name: Upload docker artifact
-        if: ${{ matrix.docker-artifact }}
         uses: actions/upload-artifact@v4
         with:
-          name: docker-binary-artifact-${{ matrix.target }}
-          path: target/${{ matrix.target }}/release
+          name: docker-binary-artifact-x86_64-unknown-linux-musl
+          path: target/x86_64-unknown-linux-musl/release
 
       - name: Store docker artifact version
-        if: ${{ matrix.docker-artifact }}
         run: echo "3.13.1" >> cli-version.txt
 
       - name: Upload docker artifact version
-        if: ${{ matrix.docker-artifact }}
         uses: actions/upload-artifact@v4
         with:
           name: docker-tag-artifact
