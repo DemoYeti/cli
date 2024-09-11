@@ -1,54 +1,11 @@
 name: Release
-on:
-  push:
-    tags:
-      - "v*.*.*"
+on: pull_request
 env:
   MACOSX_DEPLOYMENT_TARGET: 10.7
 
 jobs:
-  create-release:
-    name: Create Release
-    runs-on: ubuntu-latest
-    outputs:
-      railway_version: ${{ env.CLI_VERSION }}
-
-    steps:
-      - name: Get the release version from the tag
-        shell: bash
-        if: env.CLI_VERSION == ''
-        run: |
-          # Apparently, this is the right way to get a tag name. Really?
-          #
-          # See: https://github.community/t5/GitHub-Actions/How-to-get-just-the-tag-name/m-p/32167/highlight/true#M1027
-          echo "CLI_VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
-          echo "version is: ${{ env.CLI_VERSION }}"
-
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Build Changelog
-        id: build_changelog
-        uses: mikepenz/release-changelog-builder-action@v3.7.0
-        with:
-          configuration: ".github/changelog-configuration.json"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create GitHub release
-        id: release
-        uses: softprops/action-gh-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ env.CLI_VERSION }}
-          name: ${{ env.CLI_VERSION }}
-
   build-release:
     name: Build Release Assets
-    needs: ["create-release"]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -106,7 +63,6 @@ jobs:
           args: --release --locked --target ${{ matrix.target }}
           use-cross: ${{ matrix.use-cross || matrix.os == 'ubuntu-latest' }}
 
-      # Using artifacts to avoid rebuilding cli or fetching from assets section of release page
       - name: Upload docker artifact
         if: ${{ matrix.docker-artifact }}
         uses: actions/upload-artifact@v4
@@ -116,7 +72,7 @@ jobs:
 
       - name: Store docker artifact version
         if: ${{ matrix.docker-artifact }}
-        run: echo "${{ needs.create-release.outputs.railway_version }}" >> cli-version.txt
+        run: echo "3.13.1" >> cli-version.txt
 
       - name: Upload docker artifact version
         if: ${{ matrix.docker-artifact }}
@@ -124,84 +80,3 @@ jobs:
         with:
           name: docker-tag-artifact
           path: cli-version.txt
-
-      - name: Prepare binaries (zip) [Windows]
-        if: matrix.os == 'windows-latest'
-        run: |
-          cd target/${{ matrix.target }}/release
-          strip railway.exe
-          7z a ../../../railway-${{ needs.create-release.outputs.railway_version }}-${{ matrix.target }}.zip railway.exe
-          cd -
-
-      - name: Prepare binaries (tar) [Windows]
-        if: matrix.os == 'windows-latest' || matrix.target == 'i686-pc-windows-gnu'
-        run: |
-          cd target/${{ matrix.target }}/release
-          strip railway.exe
-          7z a -ttar archive.tar railway.exe
-          7z a -tgzip ../../../railway-${{ needs.create-release.outputs.railway_version }}-${{ matrix.target }}.tar.gz archive.tar
-          cd -
-
-      - name: Prepare binaries [-linux]
-        if: matrix.os != 'windows-latest' && matrix.target != 'i686-pc-windows-gnu'
-        run: |
-          cd target/${{ matrix.target }}/release
-          strip railway || true
-          tar czvf ../../../railway-${{ needs.create-release.outputs.railway_version }}-${{ matrix.target }}.tar.gz railway
-          cd -
-
-      - name: Upload release archive
-        uses: softprops/action-gh-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ needs.create-release.outputs.railway_version }}
-          files: railway-${{ needs.create-release.outputs.railway_version }}-${{ matrix.target }}*
-
-      - name: Install musl-tools
-        if: matrix.target == 'x86_64-unknown-linux-musl'
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
-
-      - name: Install cargo-deb
-        if: matrix.target == 'x86_64-unknown-linux-musl'
-        run: cargo install cargo-deb
-
-      - name: Generate .deb package file
-        if: matrix.target == 'x86_64-unknown-linux-musl'
-        run: cargo deb --target x86_64-unknown-linux-musl --output railway-${{ needs.create-release.outputs.railway_version }}-amd64.deb
-
-      - name: Upload .deb package file
-        if: matrix.target == 'x86_64-unknown-linux-musl'
-        uses: svenstaro/upload-release-action@v2
-        with:
-          tag: ${{ needs.create-release.outputs.railway_version }}
-          file: railway-${{ needs.create-release.outputs.railway_version }}-amd64.deb
-
-      - name: Update homebrew tap
-        uses: mislav/bump-homebrew-formula-action@v2
-        if: "matrix.target == 'x86_64-apple-darwin' || matrix.target == 'aarch64-apple-darwin' && !contains(github.ref, '-')"
-        with:
-          formula-name: rlwy
-          formula-path: rlwy.rb
-          homebrew-tap: railwayapp/homebrew-tap
-          download-url: https://github.com/railwayapp/cli/releases/latest/download/railway-${{ needs.create-release.outputs.railway_version }}-${{ matrix.target }}.tar.gz
-        env:
-          COMMITTER_TOKEN: ${{ secrets.COMMITTER_TOKEN }}
-
-  notify-release:
-    name: Notify Release
-    needs: ["create-release", "build-release"]
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Discord Deployment Status Notification
-        uses: sarisia/actions-status-discord@v1
-        with:
-          webhook: ${{ secrets.DEPLOY_WEBHOOK }}
-          status: ${{ job.status }}
-          title: "Published CLI"
-          description: "Published CLI version ${{ needs.create-release.outputs.railway_version }}"
-          nofail: false
-          nodetail: false
-          username: Github Actions
-          avatar_url: https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png
